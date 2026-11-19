@@ -35,3 +35,14 @@ vd: scp "D:\Download\tomato_unoq_4_luong_tracking11.py" arduino@10.227.155.111:/
 +lệnh chạy file
 py ten_file_cần_chạy
 vd: python tomato_unoq_4_luong_tracking11.py
+
+\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+
++ Lệnh kiểm tra chế độ hoạt động USB (USB Mode) của Arduino UNO Q
+sudo cat /sys/kernel/debug/usb/4e00000.usb/mode
++ Lệnh chuyển USB Controller của Arduino UNO Q sang chế độ Host
+sudo sh -c 'echo host > /sys/kernel/debug/usb/4e00000.usb/mode'
++ Lệnh liệt kê các thiết bị USB đang được kết nối với Arduino UNO Q
+lsusb
++ Lệnh liệt kê các thiết bị camera và video được Linux nhận diện
+v4l2-ctl --list-devices
