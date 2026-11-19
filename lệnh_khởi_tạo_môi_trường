@@ -1,0 +1,11 @@
++Lệnh mở thư mục
+cd ~/tên_thư_mục
+vd: cd ~/AI_cachua
++Lệnh khỏi tạo môi trường ảo
+source .venv/bin/activate
++lệnh tải file lên uno q
+scp "dường_dẫn_tới_file" arduino@11_số_cuối_địa_chỉ_ip_wifi:/home/arduino/tên_thư_mục_đang_làm_dự_án/
+vd: scp "D:\Download\tomato_unoq_4_luong_tracking11.py" arduino@10.227.155.111:/home/arduino/AI_cachua/
++lệnh chạy file
+py ten_file_cần_chạy
+vd: python tomato_unoq_4_luong_tracking11.py
