@@ -26,23 +26,19 @@ vd: 172.17.0.1 10.227.155.111
 ssh arduino@11_so_cuoi_dia_chi_ip
 vd: ssh arduino@10.227.155.111
 
-+Lệnh mở chạy thư mục
-cd ~/tên_thư_mục
-vd: cd ~/AI_cachua
-
-+lệnh kích hoạt môi trường ảo 
-source .venv/bin/activate
-
 \\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
 
 +Lệnh mở thư mục
 cd ~/tên_thư_mục
 vd: cd ~/AI_cachua
+
 +Lệnh khỏi tạo môi trường ảo
-source .venv/bin/activate
+source .venv/bin/activate=
+
 +lệnh tải file lên uno q
 scp "dường_dẫn_tới_file" arduino@11_số_cuối_địa_chỉ_ip_wifi:/home/arduino/tên_thư_mục_đang_làm_dự_án/
 vd: scp "D:\Download\tomato_unoq_4_luong_tracking11.py" arduino@10.227.155.111:/home/arduino/AI_cachua/
+
 +lệnh chạy file
 py ten_file_cần_chạy
 vd: python tomato_unoq_4_luong_tracking11.py
@@ -51,9 +47,12 @@ vd: python tomato_unoq_4_luong_tracking11.py
 
 + Lệnh kiểm tra chế độ hoạt động USB (USB Mode) của Arduino UNO Q
 sudo cat /sys/kernel/debug/usb/4e00000.usb/mode
+
 + Lệnh chuyển USB Controller của Arduino UNO Q sang chế độ Host
 sudo sh -c 'echo host > /sys/kernel/debug/usb/4e00000.usb/mode'
+
 + Lệnh liệt kê các thiết bị USB đang được kết nối với Arduino UNO Q
 lsusb
+
 + Lệnh liệt kê các thiết bị camera và video được Linux nhận diện
 v4l2-ctl --list-devices
