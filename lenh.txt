@@ -1,24 +1,35 @@
 + Lệnh kiểm tra thiết bị
 adb devices
+
 + Lệnh truy cập Terminal bên trong thiết bị
 adb shell
+
 +Lệnh quét danh sách wifi
 nmcli dev wifi list
 q+enter để thoát ra
+
 +Lệnh quét lại danh sách wifi mới nhất
 nmcli dev wifi rescan
 nmcli dev wifi list
+
 +Lệnh kết nối wifi
 nmcli device wifi connect "TÊN_WIFI" password "MẬT_KHẨU_WIFI"
+
++Lệnh kiểm tra trạng thái wifi
+nmcli device status
+
 +Lệnh kiểm tra địa chỉ IP wifi đang kết nối
 hostname -I
 vd: 172.17.0.1 10.227.155.111
+
 +lệnh đăng nhập và điều khiển Arduino UNO Q từ xa thông qua mạng
 ssh arduino@11_so_cuoi_dia_chi_ip
 vd: ssh arduino@10.227.155.111
+
 +Lệnh mở chạy thư mục
 cd ~/tên_thư_mục
 vd: cd ~/AI_cachua
+
 +lệnh kích hoạt môi trường ảo 
 source .venv/bin/activate
 
