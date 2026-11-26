@@ -1,0 +1,486 @@
+# DRONE PROJECT — HỒ SƠ KIỂM TRA HỆ THỐNG iBUS
+**Mục đích:** Lưu lại toàn bộ thông tin cấu hình, mã nguồn và kết quả kiểm tra hệ thống nhận tín hiệu điều khiển FlySky bằng STM32.
+
+**Trạng thái dự án:** Đang kiểm tra hệ thống nhận tín hiệu tay cầm. Chưa triển khai điều khiển động cơ hoặc bay thử.
+
+---
+
+## 1. MỤC TIÊU HIỆN TẠI
+
+Giai đoạn đầu của dự án Drone tập trung vào các mục tiêu:
+
+1. Kết nối tay cầm FlySky với bộ thu tín hiệu.
+2. STM32 nhận dữ liệu iBUS qua UART.
+3. Giải mã được 14 kênh điều khiển.
+4. Hiển thị dữ liệu lên máy tính qua UART Debug.
+5. Phát hiện mất tín hiệu từ tay cầm.
+6. Kiểm tra tính ổn định của quá trình nhận dữ liệu.
+
+Chưa triển khai ở giai đoạn này:
+- Đọc và xử lý IMU.
+- Cân bằng drone bằng PID.
+- Điều khiển ESC và động cơ.
+- Giữ vị trí bằng GPS hoặc cảm biến khác.
+- Bay tự động và né vật cản.
+
+## 2. PHẦN CỨNG
+
+| Thiết bị | Thông tin |
+|---|---|
+| Vi điều khiển | STM32F411CEU6 (Black Pill) |
+| Tay điều khiển | FlySky FS-i6X |
+| Bộ thu | FlySky IA10B |
+| Giao thức | iBUS |
+| UART nhận iBUS | USART1 |
+| UART Debug | USART2 |
+
+Mục tiêu của kết nối: IA10B gửi dữ liệu iBUS đến USART1 của STM32. USART2 được dùng để xuất dữ liệu kiểm tra lên máy tính.
+
+**Lưu ý:** Cần kiểm tra thực tế dây tín hiệu, GND chung và mức điện áp logic trước khi cấp nguồn. Chưa có đủ thông tin trong hồ sơ để xác nhận sơ đồ dây thực tế.
+
+## 3. MÔI TRƯỜNG PHẦN MỀM
+
+| Thành phần | Phiên bản / cấu hình |
+|---|---|
+| IDE | STM32CubeIDE 1.17.0 |
+| MCU | STM32F411xE |
+| STM32 HAL | V1.8.5 |
+| FreeRTOS | Kernel V10.3.1 |
+| CMSIS-RTOS | V1 |
+| MPU | Disabled |
+
+### Phiên bản HAL đã xác nhận
+
+Đã kiểm tra trực tiếp file `stm32f4xx_hal.c`, trong đó có khai báo:
+
+```c
+#define __STM32F4xx_HAL_VERSION_MAIN   (0x01U)
+#define __STM32F4xx_HAL_VERSION_SUB1   (0x08U)
+#define __STM32F4xx_HAL_VERSION_SUB2   (0x05U)
+#define __STM32F4xx_HAL_VERSION_RC     (0x00U)
+```
+
+Kết luận: STM32F4 HAL Driver V1.8.5.
+
+Đã kiểm tra thêm mã nguồn `stm32f4xx_hal_uart.c` để đối chiếu cách hoạt động của `HAL_UARTEx_ReceiveToIdle_DMA()` và callback nhận dữ liệu.
+
+## 4. CẤU HÌNH USART1
+
+USART1 được dùng để nhận dữ liệu iBUS.
+
+| Thông số | Giá trị |
+|---|---|
+| Baud rate | 115200 |
+| Word Length | 8 Bits |
+| Stop Bits | 1 |
+| Parity | None |
+| Mode | RX |
+| Hardware Flow Control | None |
+| Oversampling | 16 |
+| DMA RX | Enabled |
+| Receive Method | Receive To Idle |
+
+### DMA USART1 RX
+
+| Thông số | Giá trị |
+|---|---|
+| DMA Controller | DMA2 |
+| Stream | DMA2_Stream2 |
+| Channel | Channel 4 |
+| Direction | Peripheral to Memory |
+| Peripheral Increment | Disabled |
+| Memory Increment | Enabled |
+| Peripheral Data Alignment | Byte |
+| Memory Data Alignment | Byte |
+| Mode | Normal |
+| Priority | Low |
+| FIFO | Disabled |
+
+Trong file `stm32f4xx_hal_msp.c` đã kiểm tra cấu hình liên kết DMA:
+
+```c
+__HAL_LINKDMA(huart, hdmarx, hdma_usart1_rx);
+```
+
+Cấu hình USART1 RX DMA2 Stream2 Channel4 phù hợp với STM32F411.
+
+### NVIC
+
+Đã kiểm tra các ngắt:
+- USART1 global interrupt: Enabled.
+- DMA2 Stream2 global interrupt: Enabled.
+- Priority: 5.
+
+Cấu hình trong mã nguồn:
+
+```c
+HAL_NVIC_SetPriority(USART1_IRQn, 5, 0);
+HAL_NVIC_EnableIRQ(USART1_IRQn);
+```
+
+DMA2 Stream2 cũng được bật ngắt ở priority 5.
+
+## 5. CẤU HÌNH FREERTOS
+
+Các thông số đã cung cấp từ `FreeRTOSConfig.h`:
+
+```c
+#define configPRIO_BITS __NVIC_PRIO_BITS
+
+#define configLIBRARY_LOWEST_INTERRUPT_PRIORITY 15
+
+#define configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY 5
+
+#define configKERNEL_INTERRUPT_PRIORITY \
+    (15 << (8 - 4))
+
+#define configMAX_SYSCALL_INTERRUPT_PRIORITY \
+    (5 << (8 - 4))
+```
+
+Kết quả:
+- Lowest interrupt priority: 15.
+- Maximum syscall interrupt priority: 5.
+- `configMAX_SYSCALL_INTERRUPT_PRIORITY` = 80 = `0x50`.
+
+USART1 và DMA2 Stream2 đều dùng priority 5, tương thích với ngưỡng ưu tiên FreeRTOS nếu sau này cần gọi API `FromISR`.
+
+Hiện tại các callback iBUS không gọi API FreeRTOS trực tiếp.
+
+### Task iBUS
+
+Task được khai báo trong `main.c`:
+
+```c
+osThreadDef(
+    ibusThread,
+    StartIBUSTask,
+    osPriorityAboveNormal,
+    0,
+    512
+);
+```
+
+Hàm task được định nghĩa duy nhất trong `freertos.c`:
+
+```c
+void StartIBUSTask(void const *argument)
+{
+    uint16_t channels[IBUS_CHANNEL_COUNT];
+
+    for (;;)
+    {
+        IBUS_Poll();
+
+        if (IBUS_ReadFresh(channels, 200))
+        {
+            // Có dữ liệu điều khiển hợp lệ
+        }
+        else
+        {
+            // Dữ liệu cũ hoặc mất tín hiệu
+        }
+
+        osDelay(5);
+    }
+}
+```
+
+Lưu ý:
+- Không định nghĩa `StartIBUSTask()` lần thứ hai trong `main.c`.
+- `main.c` chỉ giữ prototype và khai báo tạo task.
+- Trước đây đã gặp lỗi linker `multiple definition of StartIBUSTask` do định nghĩa trùng.
+
+## 6. CẤU TRÚC KHỞI TẠO VÀ CALLBACK
+
+### Khởi tạo iBUS
+
+Trong `main.c`, đã thêm:
+
+```c
+#include "ibus.h"
+```
+
+Trong phần USER CODE BEGIN 2, gọi `IBUS_Init(&huart1)` sau khi DMA và USART1 đã được khởi tạo:
+
+```c
+MX_DMA_Init();
+MX_USART1_UART_Init();
+
+IBUS_Init(&huart1);
+```
+
+### Callback nhận dữ liệu
+
+Trong `main.c`, phần USER CODE BEGIN 4:
+
+```c
+void HAL_UARTEx_RxEventCallback(
+    UART_HandleTypeDef *huart,
+    uint16_t Size
+)
+{
+    if (huart->Instance == USART1)
+    {
+        IBUS_OnRxEvent(huart, Size);
+    }
+}
+
+void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
+{
+    if (huart->Instance == USART1)
+    {
+        IBUS_OnError(huart);
+    }
+}
+```
+
+Chỉ giữ một định nghĩa cho mỗi callback và một cặp USER CODE BEGIN 4 / USER CODE END 4.
+
+## 7. CẤU TRÚC GIAO THỨC iBUS
+
+Frame iBUS có độ dài 32 byte.
+
+| Byte | Nội dung |
+|---|---|
+| 0 | Header 0: `0x20` |
+| 1 | Header 1: `0x40` |
+| 2–29 | Dữ liệu 14 kênh |
+| 30–31 | Checksum |
+
+Mỗi kênh chiếm 2 byte:
+- Byte thấp trước.
+- Byte cao sau.
+- Có tổng cộng 14 kênh.
+
+Công thức checksum:
+
+```c
+uint16_t sum = 0xFFFF;
+
+for (uint8_t i = 0; i < IBUS_FRAME_SIZE - 2; i++)
+{
+    sum = (uint16_t)(sum - frame[i]);
+}
+```
+
+Checksum nhận được được ghép từ byte 30 và byte 31 theo thứ tự little-endian.
+
+Frame hợp lệ khi checksum tính toán bằng checksum nhận được.
+
+## 8. CẤU TRÚC FILE ibus.c
+
+Đã cung cấp và kiểm tra toàn bộ file `ibus.c`.
+
+### Bộ đệm và biến trạng thái
+
+```c
+#define IBUS_HDR0     0x20
+#define IBUS_HDR1     0x40
+
+#define IBUS_ACC_SIZE \
+    (IBUS_FRAME_SIZE + IBUS_RX_BUFFER_SIZE)
+
+static UART_HandleTypeDef *ibus_uart = NULL;
+
+static uint8_t rx_buf[IBUS_RX_BUFFER_SIZE];
+
+static uint8_t acc[IBUS_ACC_SIZE];
+static uint16_t acc_len = 0;
+
+static volatile uint16_t channels[IBUS_CHANNEL_COUNT];
+
+static volatile uint32_t last_ok_ms = 0;
+
+static volatile bool data_ready = false;
+static volatile bool rx_stalled = false;
+
+static IBUS_Stats_t stats;
+```
+
+### Các hàm chính đã kiểm tra
+
+| Hàm | Chức năng |
+|---|---|
+| `crit_enter()` | Lưu PRIMASK và tạm khóa ngắt |
+| `crit_exit()` | Khôi phục trạng thái ngắt |
+| `start_rx()` | Khởi động UART ReceiveToIdle DMA |
+| `restart_from_isr()` | Thử khởi động lại DMA trong callback |
+| `frame_checksum_ok()` | Kiểm tra checksum frame |
+| `publish_frame()` | Giải mã và cập nhật 14 kênh |
+| `IBUS_FeedBytes()` | Ghép byte và phân tích frame |
+| `IBUS_Init()` | Khởi tạo hệ thống iBUS |
+| `IBUS_Poll()` | Phục hồi nhận DMA khi cần |
+| `IBUS_OnRxEvent()` | Xử lý sự kiện nhận UART |
+| `IBUS_OnError()` | Xử lý lỗi UART |
+| `IBUS_GetChannel()` | Đọc một kênh |
+| `IBUS_GetChannels()` | Đọc toàn bộ kênh |
+| `IBUS_ReadFresh()` | Đọc dữ liệu còn mới |
+| `IBUS_IsDataReady()` | Kiểm tra đã có dữ liệu |
+| `IBUS_IsSignalOk()` | Kiểm tra tín hiệu còn hợp lệ |
+| `IBUS_GetStats()` | Lấy thống kê |
+| `IBUS_GetPacketCount()` | Lấy số packet hợp lệ |
+| `IBUS_GetErrorCount()` | Lấy tổng số lỗi |
+
+### Cơ chế nhận dữ liệu
+
+1. `IBUS_Init()` khởi động DMA.
+2. UART nhận dữ liệu vào `rx_buf`.
+3. Khi xảy ra sự kiện IDLE, HAL gọi `HAL_UARTEx_RxEventCallback()`.
+4. Callback gọi `IBUS_OnRxEvent()`.
+5. Dữ liệu được đưa vào bộ ghép `acc`.
+6. Parser tìm header và kiểm tra checksum.
+7. Frame hợp lệ được giải mã thành 14 kênh.
+8. DMA được khởi động lại để nhận đợt tiếp theo.
+
+### Cơ chế phục hồi
+
+Khi xảy ra lỗi UART hoặc khởi động lại DMA thất bại:
+- Đánh dấu `rx_stalled = true`.
+- Xóa frame đang ghép nếu có lỗi UART.
+- `IBUS_Poll()` kiểm tra trạng thái.
+- Thử `HAL_UART_AbortReceive()`.
+- Khởi động lại `HAL_UARTEx_ReceiveToIdle_DMA()`.
+
+### Cơ chế kiểm tra dữ liệu mới
+
+```c
+IBUS_ReadFresh(channels, 200);
+```
+
+Nếu dữ liệu chưa từng nhận được hoặc dữ liệu đã cũ quá 200 ms:
+- Hàm trả về `false`.
+- Mảng đầu ra được xóa về 0.
+
+Nếu dữ liệu còn mới:
+- Hàm trả về `true`.
+- Mảng chứa 14 giá trị kênh gần nhất.
+
+**Quan trọng:** Task điều khiển phải xử lý trường hợp trả về `false`. Không được coi mảng 0 là lệnh điều khiển bình thường.
+
+## 9. CÁC ĐIỂM ĐÃ ĐÁNH GIÁ
+
+### Những phần có cơ sở để xác nhận
+
+- [x] Đã xác định MCU STM32F411CEU6.
+- [x] Đã xác định HAL V1.8.5.
+- [x] Đã kiểm tra cấu hình USART1.
+- [x] Đã kiểm tra DMA2 Stream2 Channel4.
+- [x] Đã kiểm tra DMA Normal.
+- [x] Đã kiểm tra USART1 và DMA NVIC.
+- [x] Đã kiểm tra cấu hình ngưỡng ưu tiên FreeRTOS.
+- [x] Đã kiểm tra cách dùng ReceiveToIdle DMA trong HAL.
+- [x] Đã kiểm tra cấu trúc parser iBUS.
+- [x] Đã kiểm tra checksum và cách giải mã 14 kênh.
+- [x] Đã kiểm tra cơ chế phục hồi DMA.
+- [x] Đã kiểm tra cơ chế phát hiện dữ liệu cũ.
+
+### Những điểm cần cải thiện về sau
+
+**1. Parser chạy trong ISR**
+
+`IBUS_OnRxEvent()` gọi `IBUS_FeedBytes()` trực tiếp. Parser thực hiện memcpy, checksum và memmove trong ngắt.
+
+Đối với giai đoạn thử nghiệm nhận tay cầm, có thể tiếp tục sử dụng. Khi phát triển hệ thống điều khiển thời gian thực, nên cân nhắc chuyển parser sang task riêng.
+
+**2. Kiểm tra trạng thái RxState**
+
+`IBUS_Poll()` đang dùng:
+
+```c
+if (ibus_uart->RxState == HAL_UART_STATE_READY)
+{
+    rx_stalled = true;
+}
+```
+
+Cần tiếp tục theo dõi trạng thái này khi chạy thực tế. Không nên xem `RxState` là cơ chế giám sát lỗi duy nhất.
+
+**3. Failsafe**
+
+`IBUS_ReadFresh()` phát hiện dữ liệu cũ, nhưng chưa tự động đưa drone về trạng thái an toàn. Failsafe phải được triển khai ở tầng điều khiển.
+
+**4. Thống kê và đồng bộ**
+
+Cần kiểm tra tiếp các biến thống kê, trạng thái dùng chung giữa ISR và task khi tích hợp nhiều tác vụ hơn.
+
+**5. Hàm SelfTest**
+
+Trong thông tin đã kiểm tra, `IBUS_SelfTest()` được ghi nhận là có khai báo trong `ibus.h`, nhưng chưa thấy phần định nghĩa trong `ibus.c`. Cần xác nhận có được định nghĩa ở file khác hoặc có thực sự cần dùng không.
+
+## 10. CÁC VIỆC CHƯA ĐƯỢC XÁC NHẬN BẰNG THỬ NGHIỆM
+
+Đây là phần rất quan trọng. Kiểm tra mã nguồn không đồng nghĩa hệ thống đã hoạt động đúng trên phần cứng.
+
+- [ ] Build thành công toàn bộ project.
+- [ ] Nạp chương trình thành công.
+- [ ] IA10B gửi tín hiệu đến USART1.
+- [ ] STM32 nhận được dữ liệu DMA thực tế.
+- [ ] Đọc được đủ 14 kênh.
+- [ ] Các cần gạt thay đổi đúng kênh.
+- [ ] Giá trị các kênh nằm trong khoảng hợp lệ.
+- [ ] Packet hợp lệ tăng liên tục.
+- [ ] Checksum error không tăng bất thường.
+- [ ] Không có UART error bất thường.
+- [ ] Mất tín hiệu khi tắt tay cầm.
+- [ ] `IBUS_ReadFresh()` trả về false khi dữ liệu quá cũ.
+- [ ] DMA tự phục hồi sau lỗi.
+- [ ] Chạy ổn định trong thời gian dài.
+
+## 11. KẾ HOẠCH LÀM VIỆC TIẾP THEO
+
+### Giai đoạn 1 — Hoàn thiện nhận tay cầm
+
+1. Build project.
+2. Nạp firmware.
+3. Kết nối IA10B.
+4. Viết phần Debug UART2.
+5. In 14 kênh ra Serial Monitor.
+6. Kiểm tra từng cần gạt, công tắc.
+7. Kiểm tra mất tín hiệu.
+8. Kiểm tra thống kê packet và lỗi.
+
+### Giai đoạn 2 — Đọc IMU
+
+- Kết nối cảm biến IMU.
+- Đọc dữ liệu gia tốc và con quay.
+- Kiểm tra hướng trục.
+- Kiểm tra độ nhiễu.
+- Xây dựng bộ ước lượng góc.
+
+### Giai đoạn 3 — Điều khiển drone
+
+- Xây dựng bộ điều khiển PID.
+- Kết hợp tín hiệu tay cầm và IMU.
+- Điều khiển ESC.
+- Kiểm tra chiều quay động cơ.
+- Kiểm tra failsafe và các giới hạn an toàn.
+
+### Giai đoạn 4 — Nâng cấp tự động hóa
+
+- Giữ độ cao.
+- Giữ vị trí.
+- GPS.
+- LiDAR.
+- Né vật cản.
+- Bay theo lộ trình.
+
+Chỉ chuyển giai đoạn khi giai đoạn trước đã được kiểm tra thực tế.
+
+## 12. CÁCH TIẾP TỤC Ở LẦN LÀM VIỆC SAU
+
+Khi mở lại cuộc trò chuyện, gửi tài liệu này và yêu cầu:
+
+**"Tiếp tục dự án Drone từ hồ sơ kiểm tra iBUS. Hiện tại mình muốn tiếp tục bước kiểm tra nhận tín hiệu FlySky và Debug UART2. Hãy dựa trên những gì đã xác nhận, không bắt mình kiểm tra lại các cấu hình đã có bằng chứng."**
+
+Nếu có thay đổi cấu hình hoặc mã nguồn, cần cập nhật hồ sơ theo phiên bản mới. Không mặc định các kết quả kiểm tra cũ vẫn đúng sau khi sửa code hoặc phần cứng.
+
+---
+
+**TRẠNG THÁI TỔNG KẾT**
+
+Hệ thống đã có cấu trúc phần mềm nhận iBUS bằng USART1 + DMA + IDLE, có parser 14 kênh, checksum, cơ chế phục hồi và kiểm tra dữ liệu cũ.
+
+**Chưa xác nhận hoạt động thực tế trên phần cứng.**
+
+Bước tiếp theo: Build → nạp firmware → Debug UART2 → kiểm tra 14 kênh → kiểm tra failsafe.
