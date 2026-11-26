@@ -1,0 +1,43 @@
+1 - Tay cầm slysky i6x + RX ia10b(10 )
++ Phương thức giao tiếp: tay cầm <--->sóng vô tuyết(2.4ghz)<--->rx<--->ibus<--->fc
++ Cấu trúc gioa thức ibus(32 byte): là giao thức truyèn dữ liệu nối tiếp uart
++ 32 byte = 2 byte(đầu) + 28 byte(14 kênh mỗi kênh 2 byte) + 2 byte(kiểm tra dữ liệu đúng sai)
+
++ Cấu hình stm32
+  Baud rate: 115200 bps
+  Data bits: 8 bit
+  Parity: None
+  Stop bits: 1 bit
+
++Kiểu truyền: UART, thường là LSB first
+
+Kênh	Byte thấp	Byte cao
+CH1	  2	        3
+CH2	  4         5
+CH3	  6	        7
+CH4	  8	        9
+CH5	  10	      11
+CH6	  12	      13
+CH7	  14	      15
+CH8	  16      	17
+CH9	  18	      19
+CH10	20	      21
+CH11	22	      23
+CH12	24	      25
+CH13	26	      27
+CH14	28	      29
+
++Giá trị =(Byte_H*256)+Byte_L
++Checksum = 65535 - tổng giá trị 30 bit đầu
++Công thức uint16_t ch1 = data[2] | (data[3] << 8);
+GT: byte thấp data[2] = 220 biểu diễn dưới dạng bit 00000000 11011100
+    byte cao data[3] = 5 biểu diêu dưới dạng bit 00000000 000101
+    data[3] << 8: 00000101 00000000
+    data[2]:      00000000 11011100
+                  -----------------
+    Kết quả:      00000101 11011100
+
+Sau khi giải mã, FC có thể nhận được các giá trị như:
+- 1000: Giá trị thấp.
+- 1500: Giá trị trung tâm.
+- 2000: Giá trị cao. chắc giờ đủ để qua phần viết code rồi
